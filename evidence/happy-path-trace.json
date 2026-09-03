@@ -1,0 +1,146 @@
+{
+  "captured_at": "2026-09-03T10:35:21+00:00",
+  "what_this_is": "Consolidated identifiers for the happy path. Each block is copied from the evidence file of the test that actually proved that boundary, so the blocks come from different runs of the suite and their ids differ by design: IP01/IP02/IP04 from the J1 golden path, IP06 from the J3 promotion run, IP10 from the trace-continuity run, IP03/IP05 read directly from Delta and Qdrant. A single row per boundary would have to be hand-typed, which is exactly what the lab forbids.",
+  "golden_path_run": {
+    "kafka": {
+      "topic": "data.raw",
+      "key": "it-j1-e45cf375",
+      "partition": 2,
+      "offset": 38,
+      "idempotency_key_in_event": "fb:it-j1-e45cf375:d397b8a7669034d053b59243665e2c83",
+      "event_id": "997c9ea06899430286a22fa7e3846fa7",
+      "traceparent_header": "00-726a205203ed4ab1bbe36f9c3ac5642a-ee5ee39d961fe0f6-01",
+      "trace_id": "726a205203ed4ab1bbe36f9c3ac5642a"
+    },
+    "airflow": {
+      "dag_id": "lab28_ingestion_pipeline",
+      "dag_run_id": "it-4fe49c3d",
+      "state": "success",
+      "tasks": {
+        "drain_kafka_into_delta": "success",
+        "refresh_online_features": "success",
+        "index_new_documents": "success",
+        "announce_processed_batch": "success"
+      },
+      "asset_events": [
+        "lab28://delta/feedback",
+        "lab28://delta/documents",
+        "lab28://feast/asker_activity",
+        "lab28://qdrant/lab28_documents"
+      ]
+    },
+    "feast": {
+      "entity": {
+        "asker_id": "it-j1-e45cf375"
+      },
+      "feature_service": "asker_serving_v1",
+      "delta_version_in_feature_row": 16,
+      "freshness_seconds": 78.382041,
+      "degraded": false
+    }
+  },
+  "delta_versions": {
+    "feedback_latest": 15,
+    "feedback_earliest": 0,
+    "feedback_merge_commits": 15,
+    "documents_latest": 9,
+    "time_travel": {
+      "table": "feedback",
+      "earliest_version": 0,
+      "latest_version": 15,
+      "earliest_rows": 0,
+      "latest_rows": 25,
+      "operations": [
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "MERGE",
+        "CREATE TABLE"
+      ]
+    }
+  },
+  "mlflow_version": {
+    "model": "lab28-rag-release",
+    "version": "5",
+    "run_id": "e7867d666e4d498cbe9bd04c1ef6239b",
+    "alias": "champion",
+    "promoted_from": "2",
+    "provenance_tags": {
+      "lab28.prompt_version": "it-j3-0f76cb34",
+      "lab28.vllm_model_id": "Qwen/Qwen3-1.7B",
+      "lab28.embedding_model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@faf4aa4225822f3bc6376869cb1164e8e3feedd0",
+      "lab28.delta_version": "18",
+      "lab28.qdrant_collection": "lab28_documents",
+      "lab28.feature_service": "asker_serving_v1"
+    }
+  },
+  "retrieval": {
+    "collection": "lab28_documents",
+    "points_total": 20,
+    "embedding_model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@faf4aa4225822f3bc6376869cb1164e8e3feedd0",
+    "top_hits": [
+      {
+        "doc_id": "doc-ip09-metrics",
+        "score": 0.8333334
+      },
+      {
+        "doc_id": "doc-degraded-policy",
+        "score": 0.5714286
+      },
+      {
+        "doc_id": "it-j2-doc-1e2ca1b1",
+        "score": 0.38596493
+      },
+      {
+        "doc_id": "doc-ip06-mlflow",
+        "score": 0.31666666
+      },
+      {
+        "doc_id": "doc-ip10-tracing",
+        "score": 0.30555555
+      }
+    ]
+  },
+  "trace": {
+    "trace_id": "68f76c6f81d64e7c8f8b8ac9776e1623",
+    "traceparent": "00-68f76c6f81d64e7c8f8b8ac9776e1623-6b1db06efd5d4769-01",
+    "dag_run_id": "it-482969c0",
+    "services": [
+      "lab28-airflow",
+      "lab28-api",
+      "lab28-gateway"
+    ],
+    "span_count": 11,
+    "required_spans_present": [
+      "lab28.airflow.dag",
+      "lab28.api.ingest",
+      "lab28.gateway.request",
+      "lab28.kafka.consume",
+      "lab28.kafka.produce",
+      "lab28.spark.delta_merge"
+    ],
+    "required_spans_missing": [
+      "lab28.api.ask",
+      "lab28.feast.get_online_features",
+      "lab28.mlflow.resolve_release",
+      "lab28.qdrant.query",
+      "lab28.vllm.chat_completion"
+    ],
+    "note": "The five missing spans all sit behind lab28.vllm.chat_completion on the /api/v1/ask leg, which is gated by IP07. Fixing IP07 completes IP10 with no code change."
+  },
+  "serving": {
+    "status": "UNVERIFIED",
+    "reason": "POST /api/v1/ask returns 503 dependency_unavailable because no real vLLM endpoint exists on this machine."
+  }
+}

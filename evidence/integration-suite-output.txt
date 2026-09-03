@@ -1,0 +1,22 @@
+=== uv run pytest integration-tests -m "not gpu and not langsmith" -q ===
+
+Run 1 - 2026-09-03T09:36Z
+56 passed, 16 deselected in 235.22s (0:03:55)
+
+Run 2 - 2026-09-03T09:52Z (confirmation run, identical source)
+56 passed, 16 deselected in 249.10s (0:04:09)
+
+The 16 deselected tests are the two declared gates in integration-tests/conftest.py:
+  - gpu       : needs an endpoint that proves it is a real vLLM build (IP07, and the
+                serving leg of IP10). This machine has no NVIDIA GPU, so these are
+                skipped rather than faked.
+  - langsmith : needs LANGSMITH_API_KEY. The local OTLP backend carries the same
+                spans, so the rest of tracing stays runnable offline.
+
+=== uv run lab28 integration ===
+score 83, ready false
+IP01 ready | IP02 unverified | IP03 ready | IP04 ready | IP05 ready
+IP06 ready | IP07 not_ready | IP08 unverified | IP09 unverified | IP10 unverified
+
+"unverified" here means "not provable from inside the CLI process" - those four are
+proved by the live integration tests instead. IP07 is the only genuine failure.

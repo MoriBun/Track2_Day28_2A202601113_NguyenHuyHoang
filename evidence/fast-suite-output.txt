@@ -1,0 +1,16 @@
+=== uv run pytest starter-tests tests -q ===
+........................................................................ [ 82%]
+...............                                                          [100%]
+87 passed in 4.89s
+
+=== uv run ruff check . ===
+All checks passed!
+
+=== scripts/verify_matrix.py ===
+OK    245 checks passed: contracts\integration-matrix.yaml matches the repository
+
+=== scripts/check_portability.py ===
+OK    supported workflow is host-path and shell independent
+
+=== scripts/validate_manifests.py ===
+Kubernetes and GitOps manifest contracts passed

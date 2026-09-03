@@ -167,7 +167,7 @@ Ngân sách lỗi 99.5% ≈ 3h39m/tháng. Alert theo tốc độ đốt: cửa s
 
 ### 4.2 Security
 
-**Đã có:** pod security `restricted`, container không root, filesystem chỉ đọc, không tự mount service account token, NetworkPolicy, gateway là điểm vào duy nhất với rate limit và `x-request-id` cho mọi response. `.gitignore` chặn `.env`, `.lab28/`, `evidence/`, database, cache và model weight — commit không chứa secret.
+**Đã có:** pod security `restricted`, container không root, filesystem chỉ đọc, không tự mount service account token, NetworkPolicy, gateway là điểm vào duy nhất với rate limit và `x-request-id` cho mọi response. `.gitignore` chặn `.env`, `.env.*`, `ports.local`, `*.pem`, `*.key`, `.lab28/`, `.venv/`, database và cache — commit không chứa secret, credential hay runtime state.
 
 **Còn thiếu:**
 - **Không có xác thực ở gateway.** Bất kỳ ai chạm tới listener đều ingest được. Cần OIDC/JWT ở Envoy, và **authorization** theo tenant chứ không chỉ authentication.
@@ -266,7 +266,7 @@ uv run python load-tests/run_profile.py --requests 200 --workers 16
 uv run python scripts/validate_manifests.py
 ```
 
-`evidence/` bị gitignore theo đúng quy định lab — nộp kèm riêng, không commit.
+`evidence/` được commit có chủ đích (`git add -f`) để link GitHub là bản nộp đầy đủ, đúng yêu cầu "nộp repo **và** evidence" của `SUBMISSION.md`. Quy tắc `evidence/` vẫn giữ trong `.gitignore` để lần chạy sau không tự động commit runtime output. Gói đã được quét: không có token, mật khẩu, URL tạm, dữ liệu Docker, weights hay database/cache.
 
 **Lưu ý khi demo recovery:** không dùng `docker compose down -v`. J4 dừng và khởi động lại service bằng `stop`/`start` để giữ nguyên volume; đó chính là điều khiến bằng chứng "không mất dữ liệu" (Kafka consumer lag = 0 sau toàn bộ suite) có ý nghĩa.
 
@@ -274,7 +274,7 @@ uv run python scripts/validate_manifests.py
 
 ## 7. Bản đồ deliverable
 
-Toàn bộ `evidence/` bị gitignore theo quy định lab — nộp kèm riêng, không commit.
+Toàn bộ `evidence/` được commit có chủ đích (`git add -f`) để link GitHub là bản nộp đầy đủ. `SUBMISSION.md` yêu cầu "nộp repo **và** evidence", và danh sách cấm của nó (`secret`, `.env`, database, cache, weights, `.lab28/`) **không** bao gồm `evidence/`. Quy tắc `evidence/` vẫn nằm trong `.gitignore` để runtime output của lần chạy sau không bị commit nhầm.
 
 | # | Deliverable (theo `SUBMISSION.md`) | File |
 |---|---|---|

@@ -1,0 +1,149 @@
+{
+  "scenario": "Feast down -> degraded -> recover",
+  "timeline": [
+    {
+      "at": "2026-09-03T10:19:54.688+00:00",
+      "step": "baseline captured",
+      "status": "degraded"
+    },
+    {
+      "at": "2026-09-03T10:19:56.290+00:00",
+      "step": "inject: docker compose stop feast",
+      "exit_code": 0
+    },
+    {
+      "at": "2026-09-03T10:20:00.598+00:00",
+      "step": "observed during outage",
+      "status": "degraded",
+      "http": 200,
+      "reasons": [
+        "vllm: unreachable: ConnectError",
+        "feast: unreachable: ConnectError"
+      ]
+    },
+    {
+      "at": "2026-09-03T10:20:02.798+00:00",
+      "step": "recover: docker compose start feast",
+      "exit_code": 0
+    },
+    {
+      "at": "2026-09-03T10:23:05.556+00:00",
+      "step": "observed after recovery",
+      "status": "degraded",
+      "returned_to_ready": false
+    },
+    {
+      "at": "2026-09-03T10:23:05.635+00:00",
+      "step": "no-data-loss proof captured",
+      "qdrant_points_before": 20,
+      "qdrant_points_after": 20,
+      "qdrant_unchanged": true,
+      "delta_version_before": 15,
+      "delta_version_after": 15,
+      "delta_no_rollback": true,
+      "kafka_lag_before": {
+        "lab28-pipeline/data.raw": 0.0,
+        "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+        "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+      },
+      "kafka_lag_after": {
+        "lab28-pipeline/data.raw": 0.0,
+        "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+        "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+      },
+      "kafka_fully_drained_after": false
+    }
+  ],
+  "baseline": {
+    "readiness": {
+      "http_status": 200,
+      "status": "degraded",
+      "components": {
+        "kafka": true,
+        "mlflow": true,
+        "qdrant": true,
+        "vllm": false,
+        "feast": true
+      },
+      "degraded_reasons": [
+        "vllm: unreachable: ConnectError"
+      ]
+    },
+    "qdrant_points": 20,
+    "delta_feedback_version": 15,
+    "kafka_lag": {
+      "lab28-pipeline/data.raw": 0.0,
+      "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+      "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+    }
+  },
+  "during_outage": {
+    "readiness": {
+      "http_status": 200,
+      "status": "degraded",
+      "components": {
+        "kafka": true,
+        "mlflow": true,
+        "qdrant": true,
+        "vllm": false,
+        "feast": false
+      },
+      "degraded_reasons": [
+        "vllm: unreachable: ConnectError",
+        "feast: unreachable: ConnectError"
+      ]
+    },
+    "reached_degraded": true
+  },
+  "after_recovery": {
+    "readiness": {
+      "http_status": 200,
+      "status": "degraded",
+      "components": {
+        "kafka": true,
+        "mlflow": true,
+        "qdrant": true,
+        "vllm": false,
+        "feast": true
+      },
+      "degraded_reasons": [
+        "vllm: unreachable: ConnectError"
+      ]
+    },
+    "returned_to_ready": false
+  },
+  "no_data_loss_proof": {
+    "qdrant_points_before": 20,
+    "qdrant_points_after": 20,
+    "qdrant_unchanged": true,
+    "delta_version_before": 15,
+    "delta_version_after": 15,
+    "delta_no_rollback": true,
+    "kafka_lag_before": {
+      "lab28-pipeline/data.raw": 0.0,
+      "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+      "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+    },
+    "kafka_lag_after": {
+      "lab28-pipeline/data.raw": 0.0,
+      "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+      "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+    },
+    "main_consumer_group_lag_before": 0.0,
+    "main_consumer_group_lag_after": 0.0,
+    "main_topic_fully_drained": true,
+    "dlq_backlog_after": {
+      "lab28-pipeline-it-77fd04e4/data.raw.dlq": 2.0,
+      "lab28-pipeline-it-97c6f86c/data.raw.dlq": 0.0
+    },
+    "kafka_fully_drained_after_explained": "The raw ingestion path is fully drained: consumer group lab28-pipeline on topic data.raw has lag 0 before and after the drill. The remaining lag of 2 belongs to lab28-pipeline-it-77fd04e4 on data.raw.dlq - poison records that an integration test deliberately routed to the dead letter queue. Per runbooks/failure-injection.md a DLQ is only replayed after the root cause is fixed, so a non-zero DLQ backlog is the intended resting state, not data loss."
+  },
+  "captured_at": "2026-09-03T10:23:05.635+00:00",
+  "interpretation": {
+    "component_transition": "feast ready True -> False -> True; injected and recovered",
+    "vllm_note": "vllm was already False at baseline and stayed False - IP07 is UNVERIFIED on this machine, unrelated to this drill",
+    "policy_proven": "Overall status stayed degraded with HTTP 200 for the whole outage and never became not_ready or 503. That is the designed policy: Feast is a reported but non-mandatory probe, so losing it degrades the answer instead of draining every healthy pod out of the gateway rotation and turning a partial outage into a total one.",
+    "recovery_seconds_observed": "stop at 10:19:56Z, degraded observed at 10:20:00Z (~4s to detect), start at 10:20:02Z, feast probe green again by 10:23:05Z",
+    "method": "docker compose stop/start only - no down -v, so every volume survived"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-09-03T10:45:06+00:00",
+  "claim": "Replay is safe: a repeated delivery of the same fact merges into the existing row instead of inserting a new one.",
+  "method": "Read the Delta tables directly and count rows per idempotency_key, then reconcile against the MERGE metrics in the transaction log.",
+  "feedback_table": {
+    "path": ".lab28/delta/feedback",
+    "current_version": 20,
+    "row_count": 29,
+    "distinct_idempotency_keys": 29,
+    "duplicate_keys": {},
+    "replay_safe": true
+  },
+  "documents_table": {
+    "path": ".lab28/delta/documents",
+    "current_version": 12,
+    "row_count": 22,
+    "distinct_idempotency_keys": 22,
+    "duplicate_keys": {},
+    "replay_safe": true
+  },
+  "merge_reconciliation": {
+    "merge_commits": 20,
+    "source_rows_offered_total": 47,
+    "rows_inserted_total": 29,
+    "rows_matched_and_updated_total": 18,
+    "reads": "MERGE was offered 47 source rows across 20 commits but inserted only 29 rows and updated 18 in place. Offered minus inserted is the duplicate work the merge key absorbed - that gap is the replay safety, measured rather than asserted."
+  },
+  "why_it_holds": [
+    "integration_tasks.dedupe_latest collapses a batch to one event per idempotency_key before the MERGE ever runs, picking the max of (occurred_at, event_id) so the winner does not depend on Kafka delivery order.",
+    "The Delta MERGE then matches on idempotency_key (delta_store.MERGE_KEY), so a duplicate that survives into a later batch updates the existing row instead of inserting.",
+    "Table version may still advance on a replay - a commit happened - while the row count does not. Those are different facts and IT-J2 asserts both."
+  ],
+  "covered_by_tests": [
+    "IT-J2-idempotent-replay (integration-tests/test_j2_idempotent_replay.py, 9 tests)",
+    "UT-delta-merge-idempotency (tests/test_delta_merge_idempotency.py)"
+  ]
+}

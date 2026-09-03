@@ -1,0 +1,82 @@
+{
+  "captured_at": "2026-09-03T16:45:00+07:00",
+  "hardware": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-1240P",
+    "physical_cores": 12,
+    "logical_threads": 16,
+    "host_ram_gib": 15.7,
+    "docker_vm_ram_gib": 7.598,
+    "gpu": "Intel Iris Xe (integrated) - no NVIDIA GPU available",
+    "os": "Windows 11 Home Single Language, build 26200"
+  },
+  "method": {
+    "tool": "load-tests/run_profile.py (stdlib urllib + ThreadPoolExecutor)",
+    "endpoint": "/ready",
+    "warm_up": "30 requests at 4 workers before the measured runs",
+    "note": "status 0 means the request raised, which for the gateway runs is the Envoy local rate limit returning 429"
+  },
+  "runs": [
+    {
+      "target": "gateway http://localhost:8080",
+      "requests": 200,
+      "workers": 8,
+      "status_counts": {"200": 36, "0": 164},
+      "latency_ms": {"p50": 5.78, "p95": 531.01, "p99": 1162.36}
+    },
+    {
+      "target": "gateway http://localhost:8080",
+      "requests": 200,
+      "workers": 16,
+      "status_counts": {"200": 13, "0": 187},
+      "latency_ms": {"p50": 6.67, "p95": 714.98, "p99": 873.37}
+    },
+    {
+      "target": "api http://localhost:8000 (gateway bypassed)",
+      "requests": 200,
+      "workers": 8,
+      "status_counts": {"200": 200},
+      "latency_ms": {"p50": 487.09, "p95": 692.15, "p99": 739.36}
+    },
+    {
+      "target": "api http://localhost:8000 (gateway bypassed)",
+      "requests": 200,
+      "workers": 16,
+      "status_counts": {"200": 200},
+      "latency_ms": {"p50": 1210.65, "p95": 1618.24, "p99": 1793.51}
+    }
+  ],
+  "ask_endpoint": {
+    "status": "UNVERIFIED",
+    "observed_http_status": 503,
+    "observed_seconds": 5.67,
+    "reason": "POST /api/v1/ask returns category=dependency_unavailable because no real vLLM endpoint exists on this machine. The 5.67s is the vLLM connect timeout, not inference latency, so it is not reported as an ask SLO number."
+  },
+  "container_resources_after_load": {
+    "lab28-platform-kafka-1": {"cpu_pct": 207.07, "mem": "404.5MiB"},
+    "lab28-platform-mlflow-1": {"cpu_pct": 8.61, "mem": "1.45GiB"},
+    "lab28-platform-airflow-1": {"cpu_pct": 4.08, "mem": "716.9MiB"},
+    "lab28-platform-spark-connect-1": {"cpu_pct": 1.10, "mem": "1.764GiB"},
+    "lab28-platform-api-1": {"cpu_pct": 1.01, "mem": "796.1MiB"},
+    "lab28-platform-qdrant-1": {"cpu_pct": 0.19, "mem": "436MiB"}
+  },
+  "kafka_consumer_lag": {
+    "lab28-pipeline/data.raw": 0,
+    "note": "lag 0 after the full integration suite, including the J2 replay and the J4 stop/start cycles"
+  },
+  "prometheus_targets_up": {
+    "up": ["lab28-gateway", "lab28-qdrant", "lab28-airflow-batch", "lab28-prometheus", "lab28-collector", "lab28-api", "lab28-feast", "lab28-mlflow", "lab28-kafka"],
+    "down": ["lab28-vllm-optional (host.docker.internal:8001)"]
+  },
+  "bottleneck_analysis": [
+    "Gateway: the Envoy local rate limit (max_tokens 10, tokens_per_fill 10, fill_interval 1s) caps the public path at ~10 rps. At 8 workers only 36/200 got through and at 16 workers only 13/200. This is policy, not saturation, and it is why the two gateway runs report a low p50: a 429 is returned immediately.",
+    "API: bypassing the gateway, 200/200 succeeded at both concurrencies with zero errors. p50 went from 487ms at 8 workers to 1211ms at 16 workers - roughly 2.5x latency for 2x concurrency - so useful throughput plateaus near 13-16 rps and the service is saturated by 16 concurrent /ready probes.",
+    "Root cause of that saturation is /ready itself: it fans out to Kafka, Delta, Qdrant, MLflow and Feast on every call. Kafka held 207% CPU during the runs, the single largest consumer on the box, so broker metadata calls dominate the probe.",
+    "Memory: the 14 containers hold roughly 6.3GiB of the 7.6GiB assigned to the Docker VM. Spark Connect (1.76GiB) and MLflow (1.45GiB) are the two largest and neither is on the request path.",
+    "Not measured: real inference latency, because IP07 has no GPU-backed vLLM on this machine."
+  ],
+  "degraded_policy": [
+    "Mandatory probe failing -> /ready 503 -> the gateway drains that pod.",
+    "Optional probe failing (Feast) -> /ready 200 with status degraded -> answers keep serving without personalisation rather than taking healthy pods out of rotation.",
+    "vLLM unreachable -> POST /api/v1/ask returns 503 dependency_unavailable with retryable true and a trace_id, instead of inventing an ungrounded answer."
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "captured_at": "2026-09-03T16:45:00+07:00",
+  "static_validation": {
+    "command": "uv run python scripts/validate_manifests.py",
+    "result": "Kubernetes and GitOps manifest contracts passed",
+    "exit_code": 0
+  },
+  "kustomize_render": {
+    "command": "kubectl kustomize deploy/kubernetes/base",
+    "resources_rendered": 10,
+    "kinds": ["Namespace", "ServiceAccount", "ConfigMap", "Service", "Deployment", "NetworkPolicy", "HorizontalPodAutoscaler", "PodDisruptionBudget"],
+    "result": "rendered without error"
+  },
+  "argocd_application": {
+    "file": "gitops/application.yaml",
+    "repoURL": "https://github.com/VinUni-AI20k/Day28-Modern-Platform-Lab-Student.git",
+    "targetRevision": "refs/tags/v3.0.0",
+    "path": "deploy/kubernetes/base",
+    "syncPolicy": {"automated": {"prune": true, "selfHeal": true}},
+    "revisionHistoryLimit": 5,
+    "note": "selfHeal true is what reverts cluster-side drift; targetRevision pinned to an immutable tag is what makes a rollback a Git operation rather than a kubectl one"
+  },
+  "promotion_and_rollback_demo": {
+    "status": "VERIFIED (Git desired-state leg only)",
+    "steps": [
+      {
+        "step": "promote",
+        "action": "image tag ghcr.io/vinuni-ai20k/day28-platform-api 3.0.0 -> 3.1.0 in deploy/kubernetes/base/api.yaml",
+        "git_diff": "-          image: ghcr.io/vinuni-ai20k/day28-platform-api:3.0.0\n+          image: ghcr.io/vinuni-ai20k/day28-platform-api:3.1.0",
+        "validation_after": "Kubernetes and GitOps manifest contracts passed"
+      },
+      {
+        "step": "rollback",
+        "action": "git checkout -- deploy/kubernetes/base/api.yaml",
+        "result": "image restored to 3.0.0; git diff --stat empty; manifests still valid"
+      }
+    ]
+  },
+  "production_readiness_controls_in_manifests": {
+    "probes": {
+      "startupProbe": "/health every 5s, failureThreshold 24 (2 min budget for a cold start)",
+      "livenessProbe": "/health every 20s - deliberately touches no dependency, so a dependency outage never restarts a healthy pod",
+      "readinessProbe": "/ready every 10s - fans out to dependencies; 503 drains the pod from the gateway"
+    },
+    "security": {
+      "runAsNonRoot": true,
+      "allowPrivilegeEscalation": false,
+      "readOnlyRootFilesystem": true,
+      "seccompProfile": "RuntimeDefault",
+      "automountServiceAccountToken": false,
+      "namespace_pod_security": "pod-security.kubernetes.io/enforce=restricted",
+      "network_policy": "deploy/kubernetes/base/network-policy.yaml"
+    },
+    "resilience": {
+      "replicas": 2,
+      "hpa": "cpu 70% utilisation, min 2 / max 8, scaleDown stabilisation 300s",
+      "pdb": "minAvailable 1",
+      "resources": {"requests": "200m CPU / 256Mi", "limits": "1 CPU / 1Gi"}
+    }
+  },
+  "unverified": {
+    "live_argocd_sync_and_self_heal": {
+      "status": "UNVERIFIED",
+      "reason": "No Kubernetes cluster is reachable from this machine. kubectl v1.29.2 is installed but kind, minikube, kustomize, helm and the argocd CLI are not, and `kubectl cluster-info` finds no server. Docker Desktop's built-in Kubernetes would need roughly the whole 7.6 GiB VM, of which the 14-container lab stack already holds about 6.3 GiB, so bringing up a cluster would mean tearing down the running platform and destroying the demo state this evidence pack depends on.",
+      "what_would_prove_it": [
+        "argocd app sync lab28-platform, then argocd app get showing Synced/Healthy",
+        "kubectl -n lab28 set image deploy/lab28-api api=<other-tag> to inject drift, then argocd app get showing the field reverted by selfHeal",
+        "git revert of the tag commit, then argocd app history / argocd app rollback, then kubectl -n lab28 get deploy -o wide showing replicas and image back at 3.0.0"
+      ]
+    }
+  }
+}
