@@ -6,3 +6,10 @@ __pycache__/
 .ruff_cache/
 evidence/
 readiness-report.json
+
+# Local secrets and machine-specific overrides - never commit these.
+.env
+.env.*
+ports.local
+*.pem
+*.key

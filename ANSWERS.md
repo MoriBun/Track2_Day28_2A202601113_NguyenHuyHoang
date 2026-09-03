@@ -201,6 +201,36 @@ Quan sát về chi phí từ số đo:
 
 ---
 
+## 4b. Reflection
+
+### Điều khó nhất
+
+**Giữ trace sống qua ranh giới Kafka.** Mọi thứ khác trong bài là gọi một API và đọc kết quả. Riêng chỗ này thì consumer, Airflow DAG và Spark MERGE chạy trong ba process **chưa từng nhìn thấy HTTP request gốc**. Không có ngữ cảnh nào tự chảy sang; nếu `event_headers` không ghi `traceparent` vào header Kafka thì mỗi process sẽ lặng lẽ mở một trace mới và không có gì báo lỗi cả — test vẫn xanh, dashboard vẫn đẹp, chỉ có trace là đứt làm bốn mảnh. Một lỗi im lặng thì khó hơn nhiều so với một lỗi ồn ào.
+
+Chi tiết khiến tôi phải dừng lại suy nghĩ là quyết định **bỏ hẳn** header khi không có trace, thay vì gửi chuỗi rỗng. Chuỗi rỗng vẫn là header Kafka hợp lệ nhưng là W3C traceparent hỏng — nó đẩy cái sai xuống consumer dưới dạng dữ liệu rác thay vì một tín hiệu rõ ràng "không có context". Đây là lúc tôi hiểu ra bài học lớn nhất của lab: ranh giới không chỉ là nơi truyền dữ liệu, mà là nơi phải quyết định *cái gì được phép vắng mặt*.
+
+**Á quân:** phân biệt `degraded` với `not_ready`. Trực giác ban đầu của tôi là dependency hỏng thì báo không sẵn sàng. Trực giác đó sai, và sai theo hướng nguy hiểm: coi Feast là mandatory sẽ khiến `/ready` trả 503 → gateway rút *toàn bộ* replica → một sự cố cục bộ thành mất dịch vụ toàn phần. Cùng logic đó áp cho probe Kubernetes: `livenessProbe` cố ý không chạm dependency nào, vì nếu chạm thì sự cố Kafka sẽ khiến kubelet **restart** những pod đang hoàn toàn khỏe mạnh, đúng vào lúc hệ thống cần chúng nhất.
+
+### Điều tôi đã đánh giá sai
+
+Tôi tưởng phần khó nhất sẽ là hạ tầng — 14 container, Spark, Airflow. Thực tế hạ tầng chạy khá êm; thứ tốn thời gian là **những quyết định ngữ nghĩa nhỏ**: tie-break bằng `event_id` hay không, header rỗng hay vắng mặt, probe nào mandatory. Mỗi cái chỉ vài dòng code nhưng lại quyết định hệ thống hành xử ra sao lúc có sự cố.
+
+Tôi cũng đánh giá thấp chi phí *vận hành* của môi trường: Docker engine chết một lần, và máy cạn paging file sau nhiều lần chạy full suite. Xem `docs/incident-note.md` sự cố 3.
+
+### Điều sẽ cải tiến
+
+Nếu làm lại, ba việc theo thứ tự ưu tiên:
+
+1. **Cache kết quả probe của `/ready` với TTL 2–3s.** Đây là cải tiến có số đo hậu thuẫn rõ nhất: `/ready` fan-out tới 5 dependency mỗi lần gọi, và p50 tăng 487ms → 1211ms khi đi từ 8 lên 16 worker với 0 lỗi. Với `periodSeconds: 10` và HPA tối đa 8 replica thì đó là 8 vòng fan-out mỗi 10 giây chỉ để phục vụ probe. Một vòng fan-out dùng chung sẽ dời điểm bão hòa lên đáng kể mà không đổi ngữ nghĩa readiness.
+
+2. **Alert theo tốc độ đốt error budget thay vì ngưỡng tĩnh.** `Lab28HighErrorRatio > 5% trong 2 phút` vừa ồn lúc traffic thấp (vài request lỗi thành tỉ lệ lớn) vừa điếc lúc traffic cao (5% của lưu lượng lớn là sự cố nghiêm trọng nhưng vẫn dưới ngưỡng). Đa cửa sổ 5m/1h và 6h/3d sửa được cả hai đầu.
+
+3. **Tách plane theo vòng đời thay vì gom một compose.** Spark Connect (1.76 GiB) và MLflow (1.45 GiB) là hai container nặng nhất nhưng **không nằm trên đường request**. Gom chung khiến scale đường ask phải kéo theo cả Spark, và trên máy 15.7 GiB thì đó chính là nguyên nhân cạn RAM ở sự cố 3.
+
+Ngoài ra, nếu có GPU tôi sẽ đóng nốt IP07 — đó là mảnh duy nhất còn thiếu, và đóng nó cũng tự động hoàn thiện IP10.
+
+---
+
 ## 5. Đóng góp của thành viên
 
 Làm **cá nhân** (nhánh `ca-nhan-hoang`), một người đảm nhiệm cả năm vai trò:
@@ -254,7 +284,8 @@ Toàn bộ `evidence/` bị gitignore theo quy định lab — nộp kèm riêng
 | 2 | Evidence IP01–IP10 (11 file, IP09 có 2) | `evidence/ip01…ip10-*.json` |
 | 3 | Architecture / ownership | `docs/architecture-ownership.md` + `docs/images/lab28-architecture-overview.svg` |
 | 4 | Happy-path: run ID, trace ID, Delta version, MLflow version | `evidence/happy-path-trace.json` |
-| 5 | Failure / recovery + no-data-loss proof | `evidence/failure-recovery.json` |
+| 5 | Failure / recovery + no-data-loss proof | `docs/incident-note.md` (ghi chú) + `evidence/failure-recovery.json` (dữ liệu thô) |
+| — | Replay-safe proof (IP03, J2) | `evidence/replay-safety.json` |
 | 6 | Load profile P50/P95/P99 + bottleneck analysis | `evidence/load-profile.json` |
 | 7 | Kubernetes / GitOps validation + drift/rollback | `evidence/gitops-validation.json` |
 | 8 | Trade-offs, production gaps, đóng góp | `ANSWERS.md` (file này) |
@@ -267,6 +298,18 @@ Bốn định danh chính của happy path đã ghi nhận:
 | Trace ID | `68f76c6f81d64e7c8f8b8ac9776e1623` |
 | Delta version (feedback) | v15 — 15 MERGE, time travel 0 → 25 rows |
 | MLflow version | `lab28-rag-release` v5, alias `champion`, promoted from v2 |
+
+### Đối chiếu với sáu mục nộp tối thiểu
+
+| # | Yêu cầu | Nằm ở đâu |
+|---|---|---|
+| 1 | URL nhánh cá nhân trong repo private | nhánh `ca-nhan-hoang` — URL sau khi `git push -u origin ca-nhan-hoang` |
+| 2 | Gói bằng chứng do `uv run lab28 evidence` tạo ra | `evidence/ip03`, `ip05`, `ip06`, `ip07`, `integration-report.json` (do CLI ghi) + `ip01`, `ip02`, `ip04`, `ip08`, `ip09`, `ip10` (do live test ghi) |
+| 3 | Kết quả kiểm thử phần mã và integration matrix | `evidence/fast-suite-output.txt`, `evidence/integration-suite-output.txt`, `evidence/integration-report.json` |
+| 4 | Chứng minh luồng đúng, replay-safe, metrics và trace | luồng: `evidence/happy-path-trace.json` · replay-safe: `evidence/replay-safety.json` · metrics: `evidence/ip09-*.json` · trace: `evidence/ip10-trace.json` |
+| 5 | Ghi chú sự cố, dấu hiệu, nguyên nhân, khôi phục | `docs/incident-note.md` |
+| 6 | Reflection: khó nhất, trade-off, sẽ cải tiến | `ANSWERS.md` §4b (khó nhất, sẽ cải tiến) và §1 (trade-off) |
+| — | Làm cá nhân: đã đi qua các vai trò nào | `ANSWERS.md` §5 |
 
 `docs/architecture-ownership.md` được **sinh tự động** từ `contracts/integration-matrix.yaml`, nên bảng owner/contract/evidence không thể lệch khỏi contract.
 
