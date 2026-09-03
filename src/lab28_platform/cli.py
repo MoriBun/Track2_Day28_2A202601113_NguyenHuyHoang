@@ -210,6 +210,8 @@ def seed(
     the only sanctioned producer, so seeding this way exercises validation, the
     idempotency key and the traceparent header exactly as a real client would.
     """
+    import time
+
     import httpx
 
     settings = Settings.from_env()
@@ -226,7 +228,15 @@ def seed(
             selected = rows[:limit] if limit else rows
             accepted[kind], rejected[kind] = [], []
             for row in selected:
-                response = client.post(f"/api/v1/{kind}", json=row)
+                # The public gateway intentionally permits only a small burst.
+                # ``429`` is a documented retryable API response, so the
+                # bundled client must pace itself instead of treating a local
+                # rate-limit decision as a rejected ingestion record.
+                for attempt in range(4):
+                    response = client.post(f"/api/v1/{kind}", json=row)
+                    if response.status_code != 429 or attempt == 3:
+                        break
+                    time.sleep(1.0)
                 target = accepted if response.status_code == 202 else rejected
                 target[kind].append(
                     response.json()
